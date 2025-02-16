@@ -1,0 +1,27 @@
+{
+  "name": "SwiftUI Generator",
+  "id": "1462234900981434631",
+  "api": "1.0.0",
+  "main": "code.js",
+  "capabilities": [
+    "codegen",
+    "vscode"
+  ],
+  "enableProposedApi": false,
+  "documentAccess": "dynamic-page",
+  "editorType": [
+    "dev"
+  ],
+  "ui": "ui.html",
+  "codegenLanguages": [
+    {
+      "label": "SwiftUI",
+      "value": "swift"
+    }
+  ],
+  "networkAccess": {
+    "allowedDomains": [
+      "none"
+    ]
+  }
+}
