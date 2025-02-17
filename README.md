@@ -1,52 +1,63 @@
 # Figma SwiftUI Code Generator
 
-This project leverages Figma's code generation API to automatically convert Figma design nodes into SwiftUI code.
+This Figma plugin generates pixel-perfect SwiftUI views based on your Figma designs. It leverages the HAHO design system to ensure that the resulting code adheres to your design guidelines.
 
 ## Overview
 
-- **Figma Integration**  
-  Listens to Figma codegen events using `figma.codegen.on("generate", ...)` and generates SwiftUI code based on the selected Figma node.
+- **Pixel Perfect Generation:**  
+  The plugin translates your Figma designs into SwiftUI code with meticulous detail, ensuring that spacing, typography, colors, and other style properties are faithfully represented.
 
-- **SwiftUI Code Generation**  
-  Generates SwiftUI code that reflects the design, including layouts (HStack, VStack), spacings, paddings, colors, typography, and corner radii.  
-  Uses a variety of helper functions to map design properties (e.g., spacing tokens, corner radius tokens) to SwiftUI modifiers.
+- **HAHO Design System Integration:**  
+  The conversion process is designed around the HAHO design system. It follows the token mappings and style guidelines defined by HAHO to create consistent user interfaces.
 
-- **Token Mapping**  
-  Maps design tokens such as spacing (none, xxxs, xxs, xs, sm, md, lg, xl, xxl, xxxl, xxxxl, full) to numeric values for spacing, padding, and corner radius.
+- **SwiftUI Implementation:**  
+  The generated code uses the SwiftUI version of the HAHO design system available on GitHub. This ensures that the generated views are ready for integration into your SwiftUI projects.
 
-## Project Structure
+## Links
 
-- **code.ts**  
-  Contains the main code for handling Figma codegen events as well as utility functions for formatting strings and code, mapping tokens, and generating SwiftUI code.
+- **HAHO Freebie Mobile UI Kit Design System (Figma):**  
+  [HAHO Freebie Mobile UI Kit Design System](https://www.figma.com/community/file/1367501339642704444/haho-freebie-mobile-ui-kit-design-system)
 
-- **Utility Functions:**  
-  - `toCamelCase`: Converts strings to camelCase.
-  - `indent`: Indents code with a specified number of spaces.
-  - `formatTokenName` and `formatTypographyName`: Format style and typography tokens.
-  - Various helper functions to extract node properties, compute spacing tokens, and generate respective SwiftUI code for different node types.
+- **SwiftUI Version of HAHO Design System:**  
+  [Velo on GitHub](https://github.com/omardoucoure/velo)
 
-## Usage
+## How It Works
 
-1. **Select a Node in Figma**  
-   When you select a node in Figma and run the code generation, the plugin will:
-   - Extract properties (layout, colors, icons, etc.).
-   - Generate SwiftUI code (e.g., for buttons, text fields, images, etc.) based on the extracted Figma design.
+1. **Figma Codegen Event:**  
+   The plugin listens for code generation events in Figma. When triggered, it extracts properties from the selected node (such as layout, colors, padding, corner radius, etc.) and logs relevant node data.
 
-2. **Generate Code**  
-   Run the generation event from Figma. The generated SwiftUI code will include:
-   - View struct with necessary modifiers (e.g., padding, corner radius, background color).
-   - Content layout using `HStack`, `VStack`, and `ScrollView` where applicable.
+2. **Utility Functions:**  
+   A series of utility functions format strings (camelCase conversion, indentation) and map design tokens (e.g., spacing values) to their corresponding values.
 
-## Requirements
+3. **SwiftUI Code Generation:**  
+   Based on the type of node selected in Figma (for example, FRAME or INSTANCE), the plugin generates the corresponding SwiftUI code using components like `VeloNavigationView`, `HStack`, `VStack`, etc.  
+   The output is a fully formed SwiftUI file ready for integration.
 
-- Figma Plugin environment.
-- SwiftUI (for the generated output).
-- Compatible Figma document structured according to the expected properties (e.g., componentProperties on instance nodes).
+## Getting Started
+
+1. **Install the Plugin:**  
+   Import the plugin into your Figma project.
+
+2. **Setup Your Design System:**  
+   Ensure that you are using the HAHO design system in your Figma file.  
+   Download the [HAHO Freebie Mobile UI Kit Design System](https://www.figma.com/community/file/1367501339642704444/haho-freebie-mobile-ui-kit-design-system) if you haven’t already.
+
+3. **Generate SwiftUI Code:**  
+   Select a node in your Figma document and trigger the code generation event. The plugin will output a SwiftUI view file that uses the SwiftUI version of the HAHO design system (Velo).
+
+## Customization
+
+- **Spacing & Tokens:**  
+  Use the built-in mappings for spacing, padding, and corner radius tokens to control the visual details of your generated views.
+
+- **Styling & Colors:**  
+  The plugin extracts styles and color tokens from your Figma nodes to generate corresponding SwiftUI modifiers.
 
 ## Contributing
 
-Contributions or improvements are welcome. Ensure changes are tested within the Figma plugin context and result in valid SwiftUI code.
+Contributions and improvements are welcome. If you have suggestions or fixes, please open an issue or submit a pull request on the GitHub repository.
 
-## License
 
-This project is provided as-is, without warranty of any kind.
+---
+
+Happy coding!
