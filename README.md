@@ -1,40 +1,52 @@
-Below are the steps to get your plugin running. You can also find instructions at:
+# Figma SwiftUI Code Generator
 
-  https://www.figma.com/plugin-docs/plugin-quickstart-guide/
+This project leverages Figma's code generation API to automatically convert Figma design nodes into SwiftUI code.
 
-This plugin template uses Typescript and NPM, two standard tools in creating JavaScript applications.
+## Overview
 
-First, download Node.js which comes with NPM. This will allow you to install TypeScript and other
-libraries. You can find the download link here:
+- **Figma Integration**  
+  Listens to Figma codegen events using `figma.codegen.on("generate", ...)` and generates SwiftUI code based on the selected Figma node.
 
-  https://nodejs.org/en/download/
+- **SwiftUI Code Generation**  
+  Generates SwiftUI code that reflects the design, including layouts (HStack, VStack), spacings, paddings, colors, typography, and corner radii.  
+  Uses a variety of helper functions to map design properties (e.g., spacing tokens, corner radius tokens) to SwiftUI modifiers.
 
-Next, install TypeScript using the command:
+- **Token Mapping**  
+  Maps design tokens such as spacing (none, xxxs, xxs, xs, sm, md, lg, xl, xxl, xxxl, xxxxl, full) to numeric values for spacing, padding, and corner radius.
 
-  npm install -g typescript
+## Project Structure
 
-Finally, in the directory of your plugin, get the latest type definitions for the plugin API by running:
+- **code.ts**  
+  Contains the main code for handling Figma codegen events as well as utility functions for formatting strings and code, mapping tokens, and generating SwiftUI code.
 
-  npm install --save-dev @figma/plugin-typings
+- **Utility Functions:**  
+  - `toCamelCase`: Converts strings to camelCase.
+  - `indent`: Indents code with a specified number of spaces.
+  - `formatTokenName` and `formatTypographyName`: Format style and typography tokens.
+  - Various helper functions to extract node properties, compute spacing tokens, and generate respective SwiftUI code for different node types.
 
-If you are familiar with JavaScript, TypeScript will look very familiar. In fact, valid JavaScript code
-is already valid Typescript code.
+## Usage
 
-TypeScript adds type annotations to variables. This allows code editors such as Visual Studio Code
-to provide information about the Figma API while you are writing code, as well as help catch bugs
-you previously didn't notice.
+1. **Select a Node in Figma**  
+   When you select a node in Figma and run the code generation, the plugin will:
+   - Extract properties (layout, colors, icons, etc.).
+   - Generate SwiftUI code (e.g., for buttons, text fields, images, etc.) based on the extracted Figma design.
 
-For more information, visit https://www.typescriptlang.org/
+2. **Generate Code**  
+   Run the generation event from Figma. The generated SwiftUI code will include:
+   - View struct with necessary modifiers (e.g., padding, corner radius, background color).
+   - Content layout using `HStack`, `VStack`, and `ScrollView` where applicable.
 
-Using TypeScript requires a compiler to convert TypeScript (code.ts) into JavaScript (code.js)
-for the browser to run.
+## Requirements
 
-We recommend writing TypeScript code using Visual Studio code:
+- Figma Plugin environment.
+- SwiftUI (for the generated output).
+- Compatible Figma document structured according to the expected properties (e.g., componentProperties on instance nodes).
 
-1. Download Visual Studio Code if you haven't already: https://code.visualstudio.com/.
-2. Open this directory in Visual Studio Code.
-3. Compile TypeScript to JavaScript: Run the "Terminal > Run Build Task..." menu item,
-    then select "npm: watch". You will have to do this again every time
-    you reopen Visual Studio Code.
+## Contributing
 
-That's it! Visual Studio Code will regenerate the JavaScript file every time you save.
+Contributions or improvements are welcome. Ensure changes are tested within the Figma plugin context and result in valid SwiftUI code.
+
+## License
+
+This project is provided as-is, without warranty of any kind.

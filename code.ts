@@ -4,6 +4,44 @@
 const SKIPPED_NODE_NAMES = ["Top App Bar", "Interaction State", "Bottom App Bar"];
 
 /**********************************
+ * Figma Codegen Event Handler
+ **********************************/
+figma.codegen.on("generate", async (event) => {
+  const node = event.node;
+  if (!node) return [createErrorResult("No valid node selected.")];
+  
+  if (node.type === "INSTANCE") {
+      // Using getLeadingItemIcon and other functions on instance nodes.
+      // Removed unused variables.
+      getLeadingItemIcon(node);
+  }
+  
+  console.log({
+      name: node.name,
+      type: node.type,
+      nodeId: node.id,
+      properties: (node as InstanceNode).componentProperties,
+      layoutMode: "layoutMode" in node ? node.layoutMode : "N/A",
+      layoutAlign: "layoutAlign" in node ? node.layoutAlign : "N/A",
+      parentLayoutAlign: node.parent && "layoutAlign" in node.parent ? node.parent.layoutAlign : "N/A",
+      constraints: "constraints" in node ? node.constraints : "N/A"
+  });
+
+  try {
+      const swiftUICode = await generateSwiftUICode(node);
+      return [{
+          language: "SWIFT",
+          code: swiftUICode,
+          title: `${sanitizeName(node.name)}View.swift`,
+      }];
+  } catch (error) {
+      console.error(error);
+      return [createErrorResult("Error generating SwiftUI code.")];
+  }
+});
+
+
+/**********************************
  * Utility Functions
  **********************************/
 /**
@@ -55,43 +93,6 @@ function formatTypographyName(name: string): string {
         )
         .join("");
 }
-
-/**********************************
- * Figma Codegen Event Handler
- **********************************/
-figma.codegen.on("generate", async (event) => {
-    const node = event.node;
-    if (!node) return [createErrorResult("No valid node selected.")];
-    
-    if (node.type === "INSTANCE") {
-        // Using getLeadingItemIcon and other functions on instance nodes.
-        // Removed unused variables.
-        getLeadingItemIcon(node);
-    }
-    
-    console.log({
-        name: node.name,
-        type: node.type,
-        nodeId: node.id,
-        properties: (node as InstanceNode).componentProperties,
-        layoutMode: "layoutMode" in node ? node.layoutMode : "N/A",
-        layoutAlign: "layoutAlign" in node ? node.layoutAlign : "N/A",
-        parentLayoutAlign: node.parent && "layoutAlign" in node.parent ? node.parent.layoutAlign : "N/A",
-        constraints: "constraints" in node ? node.constraints : "N/A"
-    });
-  
-    try {
-        const swiftUICode = await generateSwiftUICode(node);
-        return [{
-            language: "SWIFT",
-            code: swiftUICode,
-            title: `${sanitizeName(node.name)}View.swift`,
-        }];
-    } catch (error) {
-        console.error(error);
-        return [createErrorResult("Error generating SwiftUI code.")];
-    }
-});
 
 /**********************************
  * Node Info & Data Extraction Helpers
@@ -609,7 +610,6 @@ async function generateListRowProps(node: SceneNode): Promise<string> {
         let cool = node.findOne(n => n.name === "Leading Item") as InstanceNode;
         const leadingItem = await getLeadingItemIcon(cool);
         props.push(`leadingItem: .icon(imageName: .${toCamelCase(leadingItem)})`);
-        console.log(leadingItem);
     }
     props.push("divider: true");
     return props.join(",\n               ");
@@ -617,7 +617,6 @@ async function generateListRowProps(node: SceneNode): Promise<string> {
 
 async function getLeadingItemIcon(node: InstanceNode): Promise<string> {
     let omar = node.componentProperties["Type"];
-    console.log(omar);
     switch (omar.value) {
         case "Button":
             let buttonName = node.children[0] as InstanceNode;
