@@ -3,19 +3,16 @@
  **********************************/
 const SKIPPED_NODE_NAMES = ["Top App Bar", "Interaction State", "Bottom App Bar"];
 
+let hasSegmentedControl = false;
+let segmentOptions: string[] = [];
+
 /**********************************
  * Figma Codegen Event Handler
  **********************************/
 figma.codegen.on("generate", async (event) => {
   const node = event.node;
   if (!node) return [createErrorResult("No valid node selected.")];
-  
-  if (node.type === "INSTANCE") {
-      // Using getLeadingItemIcon and other functions on instance nodes.
-      // Removed unused variables.
-      getLeadingItemIcon(node);
-  }
-  
+
   console.log({
       name: node.name,
       type: node.type,
@@ -28,16 +25,24 @@ figma.codegen.on("generate", async (event) => {
   });
 
   try {
-      const swiftUICode = await generateSwiftUICode(node);
-      return [{
+    const { viewCode, viewModelCode } = await generateSwiftUICode(node);
+    return [{
           language: "SWIFT",
-          code: swiftUICode,
+          code: viewCode,
           title: `${sanitizeName(node.name)}View.swift`,
-      }];
+      },
+      {
+        language: "SWIFT",
+        code: viewModelCode,
+        title: `${sanitizeName(node.name)}ViewModel.swift`,
+    }
+    
+    ];
   } catch (error) {
       console.error(error);
       return [createErrorResult("Error generating SwiftUI code.")];
   }
+  
 });
 
 
@@ -295,33 +300,50 @@ async function getSwiftUIFrame(node: SceneNode): Promise<string> {
 /**********************************
  * Content Generation Functions
  **********************************/
-async function generateSwiftUICode(node: SceneNode): Promise<string> {
+async function generateSwiftUICode(node: SceneNode): Promise<{ viewCode: string, viewModelCode: string }> {
     const sanitizedName = sanitizeName(node.name);
     const bodyContent = await generateBodyContent(node, true);
     const indentedBodyContent = indent(bodyContent, 8);
 
-    return `import SwiftUI
+    const viewCode = `import SwiftUI
 
 struct ${sanitizedName}View: View {
     @StateObject private var navigationState = VeloNavigationState(title: "${node.name}", hasSearchBar: false)
+    @StateObject private var viewModel = ${sanitizedName}ViewModel()
 
     init() {
-        VeloFont.registerFonts()
+      VeloFont.registerFonts()
     }
 
     var body: some View {
-      VeloNavigationView {
 ${indentedBodyContent}
-              .padding(.sm)
-          }
-          .frame(maxWidth: 600)
-          .environmentObject(navigationState)
-    }
+    .padding(.sm)
+    .ignoresSafeArea(edges: .bottom)    
+    .frame(maxWidth: 600)
+    .environmentObject(navigationState)
+}
 }
 
 #Preview {
     ${sanitizedName}View()
 }`;
+
+    let viewModelCode = `import SwiftUI
+
+class ${sanitizedName}ViewModel: ObservableObject {
+  @Published var title: String = "${node.name}"
+`;
+
+    if (hasSegmentedControl) {
+        viewModelCode += `  @Published var segmentData: [String] = [${segmentOptions}]\n`;
+        viewModelCode += `  @Published var selectedSegment: String?\n`;
+
+    }
+
+    viewModelCode += `  \n  init() {\n    self.selectedSegment = segmentData.first \n  }\n}`;
+
+return { viewCode, viewModelCode };
+
 }
 
 async function generateBodyContent(node: SceneNode, isRoot: boolean = false): Promise<string> {
@@ -339,7 +361,7 @@ async function generateBodyContent(node: SceneNode, isRoot: boolean = false): Pr
             content.push("Spacer()");
         }
     }
-
+    
     const stackType = isHorizontalLayout(node) ? "HStack" : "VStack";
     if (isItemSpacingNegative(node)) {
         return `${stackType}(spacing: -50) {\n  ${content.join("\n")}\n }\n`;
@@ -368,6 +390,7 @@ function getSpacingTokenFromValue(value: number): string {
     2: "xxxs",
     4: "xxs",
     8: "xs",
+    10: "sm",
     12: "sm",
     16: "md",
     24: "lg",
@@ -412,19 +435,20 @@ async function generateInstanceContent(node: InstanceNode): Promise<string> {
         return `BadgeView(text: "${badgeText}", backgroundColor: .infoFocus) \n`;
     }
     if (componentType === "SegmentedControl") {
-        const segments = node.children.map((child, index) => {
-            const text = getTextFromChild(child, "Button");
-            return `"${text}"`;
-        });
-        return `SegmentedPicker(
-        [${segments.join(", ")}],
-        selectedItem: .constant(${segments[0]})
-    ) { segment in
-        Text(segment)
-            .font(.textRegularSemiBold)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.vertical, 10)
-    } \n`;
+
+        let content = `SegmentedPicker(
+    viewModel.segmentData,
+    selectedItem: $viewModel.selectedSegment,
+    backgroundColor: ${getNodeColor(node)}
+  ) { item in
+    Text(item)
+      .font(.textRegularSemiBold)
+      .frame(maxWidth: .infinity, alignment: .center)
+      .foregroundColor(viewModel.selectedSegment == item ? .textNeutral05 : .textNeutral9)
+      .padding(.vertical, 10)
+    }
+    .onChange(of: viewModel.selectedSegment!) { _, _ in }`
+        return indent(content, 2);
     }
     if (componentType === "InputField") {
         return generateInputField(node);
@@ -452,9 +476,15 @@ async function generateInstanceContent(node: InstanceNode): Promise<string> {
 async function getPropertyValue(node: InstanceNode, propertyKey: string): Promise<string> {
     const properties = node.componentProperties;
     const fullKey = Object.keys(properties).find(key => key.startsWith(propertyKey));
+
+    if ("visible" in node && !node.visible) {
+        console.log(`Skipping hidden node: ${node.name}`);
+        }
+
     if (!fullKey) {
         return "nil";
     }
+
     const property = properties[fullKey];
     if (property.type === "BOOLEAN" && property.value === true) {
         const relatedSwapKey = Object.keys(properties).find(
@@ -503,10 +533,12 @@ function extractIconProperties(
             iconLeftSwapKey && typeof properties[iconLeftSwapKey].value === "string"
                 ? properties[iconLeftSwapKey].value
                 : null,
+
         iconCenterName:
             iconCenterSwapKey && typeof properties[iconCenterSwapKey].value === "string"
                 ? properties[iconCenterSwapKey].value
                 : null,
+
         iconRightName:
             iconRightSwapKey && typeof properties[iconRightSwapKey].value === "string"
                 ? properties[iconRightSwapKey].value
@@ -519,8 +551,9 @@ async function generateButtonContent(node: InstanceNode): Promise<string> {
   const { hasIconLeft, hasIconCenter, hasIconRight, iconLeftName, iconCenterName, iconRightName } =
     extractIconProperties(properties, "Content Left", "Icon Right");
   const buttonText = getTextFromChild(node, "Button");
+  console.log(hasIconLeft);
   const iconLeftPart = hasIconLeft && iconLeftName
-    ? `iconLeft: .${toCamelCase(await getTextFromComponentID(node, iconLeftName))},`
+    ? `DS: .${toCamelCase(await getTextFromComponentID(node, iconLeftName))},`
     : "";
   const iconCenterPart = node.children[0].type === "INSTANCE"
     ? `iconCenter: .${toCamelCase(node.children[0].name)},`
@@ -528,24 +561,36 @@ async function generateButtonContent(node: InstanceNode): Promise<string> {
   const iconRightPart = hasIconRight && iconRightName
     ? `iconRight: .${toCamelCase(await getTextFromComponentID(node, iconRightName))},`
     : "";
-  const buttonStyle = ".filled";
-  const isDisabled = "false";
+
+    let style = properties["Style"];
+ 
+    var buttonStyle = `.filledA`;
+
+    if (style) {
+        let value = `${style.value}`;
+        buttonStyle = `.${toCamelCase(value)}`;
+    }
+
+    const isDisabled = "false";
 
   const lines = [
     buttonText && `"${buttonText}",`,
     `background: ${getNodeColor(node)},`,
     `style: ${buttonStyle},`,
     iconLeftPart.trim() || null,
-    iconCenterPart.trim() || null,
+    // iconCenterPart.trim() || null,
     iconRightPart.trim() || null,
     `isDisabled: ${isDisabled},`,
+    `maxWidth: ${isWidthFill(node) ? ".infinity" : "none"},`,
     `action: {}`
   ].filter(line => line && line.trim() !== "");
 
   const content = indent(lines.join("\n"), 2);
   const buttonCode = `VeloButton(
 ${content}
-)`;
+)
+.frame(maxWidth: ${isWidthFill(node) ? ".infinity" : "none"}, alignment: .leading)
+`;
 
   return buttonCode;
 }
@@ -572,8 +617,8 @@ async function generateInputField(node: InstanceNode): Promise<string> {
       placeholder: "",
       isEmail: false,
       iconRight: ${await getPropertyValue(node, "Icon Right")},
-      iconLeft: ${await getPropertyValue(node, "Icon Left")}
-  )`;
+      iconLeft: ${hasIconLeft ? await getPropertyValue(node, "Icon Left") : "nil"}
+  )\n`;
 }
 
 async function generateGroupContent(node: SceneNode): Promise<string> {
@@ -660,6 +705,7 @@ async function getComponentType(node: InstanceNode): Promise<string> {
         "17": "Image",
         "352": "Image"
     };
+
     if (prefix === "171") {
         const componentMap171: Record<string, string> = {
             "3056": "Avatar",
@@ -676,5 +722,17 @@ async function getComponentType(node: InstanceNode): Promise<string> {
         };
         return componentMap104[suffix] || "Container";
     }
-    return componentMap[prefix] || "Container";
+    const componentType = componentMap[prefix] || "Container";
+
+    if (componentType === "SegmentedControl") {
+        hasSegmentedControl = true;
+        const segments = node.children.map((child) => {
+            const text = getTextFromChild(child, "Button");
+            return `"${text}"`;
+        });
+
+        segmentOptions = [segments.join(", ")];
+    }
+
+    return componentType;
 }
