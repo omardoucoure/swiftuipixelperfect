@@ -5,46 +5,49 @@ const SKIPPED_NODE_NAMES = ["Top App Bar", "Interaction State", "Bottom App Bar"
 
 let hasSegmentedControl = false;
 let segmentOptions: string[] = [];
+let hasCheckBox = false;
+let customTextFields: string[] = [];
 
 /**********************************
  * Figma Codegen Event Handler
  **********************************/
 figma.codegen.on("generate", async (event) => {
-  const node = event.node;
-  if (!node) return [createErrorResult("No valid node selected.")];
+    const node = event.node;
+    if (!node) return [createErrorResult("No valid node selected.")];
+    customTextFields = [];
+    console.log({
+        name: node.name,
+        type: node.type,
+        nodeId: node.id,
+        properties: (node as InstanceNode).componentProperties,
+        layoutMode: "layoutMode" in node ? node.layoutMode : "N/A",
+        layoutAlign: "layoutAlign" in node ? node.layoutAlign : "N/A",
+        parentLayoutAlign: node.parent && "layoutAlign" in node.parent ? node.parent.layoutAlign : "N/A",
+        constraints: "constraints" in node ? node.constraints : "N/A"
+    });
 
-  console.log({
-      name: node.name,
-      type: node.type,
-      nodeId: node.id,
-      properties: (node as InstanceNode).componentProperties,
-      layoutMode: "layoutMode" in node ? node.layoutMode : "N/A",
-      layoutAlign: "layoutAlign" in node ? node.layoutAlign : "N/A",
-      parentLayoutAlign: node.parent && "layoutAlign" in node.parent ? node.parent.layoutAlign : "N/A",
-      constraints: "constraints" in node ? node.constraints : "N/A"
-  });
+    console.log(getHorizontalAlignment(node));
 
-  try {
-    const { viewCode, viewModelCode } = await generateSwiftUICode(node);
-    return [{
-          language: "SWIFT",
-          code: viewCode,
-          title: `${sanitizeName(node.name)}View.swift`,
-      },
-      {
-        language: "SWIFT",
-        code: viewModelCode,
-        title: `${sanitizeName(node.name)}ViewModel.swift`,
+    try {
+        const { viewCode, viewModelCode } = await generateSwiftUICode(node);
+        return [{
+            language: "SWIFT",
+            code: viewCode,
+            title: `${sanitizeName(node.name)}View.swift`,
+        },
+        {
+            language: "SWIFT",
+            code: viewModelCode,
+            title: `${sanitizeName(node.name)}ViewModel.swift`,
+        }
+
+        ];
+    } catch (error) {
+        console.error(error);
+        return [createErrorResult("Error generating SwiftUI code.")];
     }
-    
-    ];
-  } catch (error) {
-      console.error(error);
-      return [createErrorResult("Error generating SwiftUI code.")];
-  }
-  
-});
 
+});
 
 /**********************************
  * Utility Functions
@@ -105,7 +108,7 @@ function formatTypographyName(name: string): string {
 async function extractTokenFromTextNode(node: TextNode): Promise<string> {
     if (!node.boundVariables?.fills?.[0]) return "";
     const boundFill = node.boundVariables.fills[0];
-    
+
     if (boundFill && "id" in boundFill) {
         const variable = await figma.variables.getVariableByIdAsync(boundFill.id);
         return variable ? formatTokenName(variable.name) : "";
@@ -151,6 +154,7 @@ function getTextFromChild(node: SceneNode, childName: string): string {
             if (nestedResult) return nestedResult;
         }
     }
+
     return "";
 }
 
@@ -171,21 +175,34 @@ function getTextPosition(node: TextNode): "leading" | "trailing" | "center" | "u
     if (!node.parent || node.parent.type !== "FRAME") {
         return "leading";
     }
+    console.log("Text node:", node.name);
+
     const parentFrame = node.parent as FrameNode;
-    if (parentFrame.layoutMode !== "HORIZONTAL") {
-        return "leading";
-    }
-    const siblings = parentFrame.children.filter(child => child.type === "TEXT") as TextNode[];
-    const index = siblings.indexOf(node);
-    if (index === -1) return "leading";
+
+    // Ensure the layout is horizontal, otherwise assume "leading"
+    // if (parentFrame.layoutMode !== "HORIZONTAL") {
+    //     return "leading";
+    // }
+
+    // Get all children in the frame (not just TEXT nodes)
+    const siblings = parentFrame.children;
+    
+    // Find the actual index by comparing node IDs instead of object references
+    const index = siblings.findIndex(child => child.id === node.id);
+    console.log("Node index:", index, "Total siblings:", siblings.length);
+
+    if (parentFrame.layoutMode === "HORIZONTAL") {
     if (index === 0) {
         return "leading";
     } else if (index === siblings.length - 1) {
         return "trailing";
     }
+    }
+    // Check if explicitly centered
     if (node.textAlignHorizontal === "CENTER") {
         return "center";
     }
+
     return "leading";
 }
 
@@ -219,7 +236,7 @@ function getNodeColor(node: SceneNode): string | null {
             return formatStyleToken(style.name, "Color");
         }
     }
-    
+
     const { r, g, b } = firstFill.color;
     const hex = [r, g, b]
         .map(c => Math.round(c * 255).toString(16).padStart(2, "0"))
@@ -337,12 +354,21 @@ class ${sanitizedName}ViewModel: ObservableObject {
     if (hasSegmentedControl) {
         viewModelCode += `  @Published var segmentData: [String] = [${segmentOptions}]\n`;
         viewModelCode += `  @Published var selectedSegment: String?\n`;
+    }
 
+    if (hasCheckBox) {
+        viewModelCode += `  @Published var isChecked: Bool = false\n`;
+    }
+
+    if (customTextFields.length > 0) {
+        for (const fieldName of customTextFields) {
+            viewModelCode += `  @Published var ${fieldName}: String = ""\n`;
+        }
     }
 
     viewModelCode += `  \n  init() {\n    self.selectedSegment = segmentData.first \n  }\n}`;
 
-return { viewCode, viewModelCode };
+    return { viewCode, viewModelCode };
 
 }
 
@@ -356,12 +382,12 @@ async function generateBodyContent(node: SceneNode, isRoot: boolean = false): Pr
     for (let i = 0; i < frameNode.children.length; i++) {
         const child = frameNode.children[i];
         if (SKIPPED_NODE_NAMES.includes(child.name)) continue;
-        content.push(await generateNodeContent(child, false)); 
-        if (i < frameNode.children.length - 1 && hasSpacer(frameNode)) {
-            content.push("Spacer()");
+        content.push(await generateNodeContent(child, false));
+        if (i < frameNode.children.length - 1 && isWidthFill(frameNode) && frameNode.layoutMode === "HORIZONTAL") {
+            content.push("Spacer()\n");
         }
     }
-    
+
     const stackType = isHorizontalLayout(node) ? "HStack" : "VStack";
     if (isItemSpacingNegative(node)) {
         return `${stackType}(spacing: -50) {\n  ${content.join("\n")}\n }\n`;
@@ -378,30 +404,36 @@ async function generateBodyContent(node: SceneNode, isRoot: boolean = false): Pr
     }
 
     let spacing = isItemSpacingNegative(node) ? "-50" : `.${getSpacingTokenFromValue(node.itemSpacing)}`;
+    if (isWidthFill(frameNode) && frameNode.layoutMode === "HORIZONTAL") {
+        spacing = ".zero";
+    }
+
     if (hasFrameChild) {
         return `${stackType}(spacing: ${spacing}) {\n  ${content.join("\n")}\n}${modifiers.length ? "\n" + modifiers.join("\n") : ""}\n`;
     }
+
+
     return `${stackType}(spacing: ${spacing}) {\n  ${content.join("\n")}\n}${modifiers.length ? "\n" + modifiers.join("\n") : ""}\n`;
 }
 
 function getSpacingTokenFromValue(value: number): string {
-  const valueToTokenMap: Record<number, string> = {
-    0: "none",
-    2: "xxxs",
-    4: "xxs",
-    8: "xs",
-    10: "sm",
-    12: "sm",
-    16: "md",
-    24: "lg",
-    32: "xl",
-    40: "xxl",
-    48: "xxxl",
-    64: "xxxxl",
-    360: "full"
-  };
+    const valueToTokenMap: Record<number, string> = {
+        0: "none",
+        2: "xxxs",
+        4: "xxs",
+        8: "xs",
+        10: "sm",
+        12: "sm",
+        16: "md",
+        24: "lg",
+        32: "xl",
+        40: "xxl",
+        48: "xxxl",
+        64: "xxxxl",
+        360: "full"
+    };
 
-  return valueToTokenMap[value] || "";
+    return valueToTokenMap[value] || "";
 }
 
 async function generateNodeContent(node: SceneNode, isRoot: boolean): Promise<string> {
@@ -454,7 +486,8 @@ async function generateInstanceContent(node: InstanceNode): Promise<string> {
         return generateInputField(node);
     }
     if (componentType === "Checkbox") {
-        return `CheckboxView(isChecked: .constant(false)) \n`;
+        hasCheckBox = true
+        return `CheckboxView(isChecked: $viewModel.isChecked, text: "${getTextFromChild(node, "Label")}") \n`;
     }
     if (componentType === "Icon") {
         const iconName = toCamelCase(node.children[0].name);
@@ -470,6 +503,9 @@ async function generateInstanceContent(node: InstanceNode): Promise<string> {
     if (componentType === "Leading Item" || componentType === "Trailing Item") {
         return `${await getLeadingItemIcon(node)} \n`;
     }
+    if (componentType === "Logo") {
+        return `LOGO`;
+    }
     return `Text("${node.name}") \n`;
 }
 
@@ -479,7 +515,7 @@ async function getPropertyValue(node: InstanceNode, propertyKey: string): Promis
 
     if ("visible" in node && !node.visible) {
         console.log(`Skipping hidden node: ${node.name}`);
-        }
+    }
 
     if (!fullKey) {
         return "nil";
@@ -547,23 +583,26 @@ function extractIconProperties(
 }
 
 async function generateButtonContent(node: InstanceNode): Promise<string> {
-  const properties = node.componentProperties;
-  const { hasIconLeft, hasIconCenter, hasIconRight, iconLeftName, iconCenterName, iconRightName } =
-    extractIconProperties(properties, "Content Left", "Icon Right");
-  const buttonText = getTextFromChild(node, "Button");
-  console.log(hasIconLeft);
-  const iconLeftPart = hasIconLeft && iconLeftName
-    ? `DS: .${toCamelCase(await getTextFromComponentID(node, iconLeftName))},`
-    : "";
-  const iconCenterPart = node.children[0].type === "INSTANCE"
-    ? `iconCenter: .${toCamelCase(node.children[0].name)},`
-    : "";
-  const iconRightPart = hasIconRight && iconRightName
-    ? `iconRight: .${toCamelCase(await getTextFromComponentID(node, iconRightName))},`
-    : "";
+    if (node.name === "Logo") {
+        return "Image(veloAsset: .arrowRightLong)";
+    }
+
+    const properties = node.componentProperties;
+    const { hasIconLeft, hasIconCenter, hasIconRight, iconLeftName, iconCenterName, iconRightName } =
+        extractIconProperties(properties, "Content Left", "Icon Right");
+    const buttonText = getTextFromChild(node, "Button");
+    const iconLeftPart = hasIconLeft && iconLeftName
+        ? `iconLeft: .${toCamelCase(await getTextFromComponentID(node, iconLeftName))},`
+        : "";
+    const iconCenterPart = node.children[0].type === "INSTANCE"
+        ? `iconCenter: .${toCamelCase(node.children[0].name)},`
+        : "";
+    const iconRightPart = hasIconRight && iconRightName
+        ? `iconRight: .${toCamelCase(await getTextFromComponentID(node, iconRightName))},`
+        : "";
 
     let style = properties["Style"];
- 
+
     var buttonStyle = `.filledA`;
 
     if (style) {
@@ -573,27 +612,29 @@ async function generateButtonContent(node: InstanceNode): Promise<string> {
 
     const isDisabled = "false";
 
-  const lines = [
-    buttonText && `"${buttonText}",`,
-    `background: ${getNodeColor(node)},`,
-    `style: ${buttonStyle},`,
-    iconLeftPart.trim() || null,
-    // iconCenterPart.trim() || null,
-    iconRightPart.trim() || null,
-    `isDisabled: ${isDisabled},`,
-    `maxWidth: ${isWidthFill(node) ? ".infinity" : "none"},`,
-    `action: {}`
-  ].filter(line => line && line.trim() !== "");
+    const lines = [
+        buttonText && `"${buttonText}",`,
+        `background: ${getNodeColor(node)},`,
+        `style: ${buttonStyle},`,
+        iconLeftPart.trim() || null,
+        // iconCenterPart.trim() || null,
+        iconRightPart.trim() || null,
+        `isDisabled: ${isDisabled},`,
+        `maxWidth: ${isWidthFill(node) ? ".infinity" : ".none"},`,
+        `action: {}`
+    ].filter(line => line && line.trim() !== "");
 
-  const content = indent(lines.join("\n"), 2);
-  const buttonCode = `VeloButton(
+    const content = indent(lines.join("\n"), 2);
+    const buttonCode = `VeloButton(
 ${content}
 )
-.frame(maxWidth: ${isWidthFill(node) ? ".infinity" : "none"}, alignment: .leading)
+.frame(maxWidth: ${isWidthFill(node) ? ".infinity" : ".none"}, alignment: .leading)
 `;
 
-  return buttonCode;
+    return buttonCode;
 }
+
+
 
 async function generateInputField(node: InstanceNode): Promise<string> {
     const properties = node.componentProperties;
@@ -601,24 +642,58 @@ async function generateInputField(node: InstanceNode): Promise<string> {
     const iconRightKey = Object.keys(properties).find(key => key.includes("Icon Right"));
     const iconLeftSwapKey = Object.keys(properties).find(key => key.includes("Icon-Left"));
     const iconRightSwapKey = Object.keys(properties).find(key => key.includes("Icon-Right"));
-  
+
     const hasIconLeft = iconLeftKey ? properties[iconLeftKey].value === true : false;
     const hasIconRight = iconRightKey ? properties[iconRightKey].value === true : false;
-  
+
     const iconLeftName = iconLeftSwapKey && typeof properties[iconLeftSwapKey].value === "string"
         ? properties[iconLeftSwapKey].value
         : null;
     const iconRightName = iconRightSwapKey && typeof properties[iconRightSwapKey].value === "string"
         ? properties[iconRightSwapKey].value
         : null;
-  
+
+        customTextFields.push(toCamelCase(getTextFromChild(node, "Text"))); // Ensure unique variable names
+
     return `CustomTextField(
-      text: .constant("${getTextFromChild(node, "Text")}"),
-      placeholder: "",
+      text: $viewModel.${toCamelCase(getTextFromChild(node, "Text") || `field${customTextFields.length + 1}`)},
+      label: "${getTextFromChild(node, "Text")}",
+      placeholder: "${getTextFromChild(node, "Text")}",
       isEmail: false,
       iconRight: ${await getPropertyValue(node, "Icon Right")},
       iconLeft: ${hasIconLeft ? await getPropertyValue(node, "Icon Left") : "nil"}
   )\n`;
+}
+
+function getHorizontalAlignment(node: SceneNode): "leading" | "trailing" | "center" | "space-between" | "unknown" {
+    if (node.type !== "FRAME" || node.layoutMode !== "HORIZONTAL") {
+        return "unknown";
+    }
+
+    const frameNode = node as FrameNode;
+
+    // If the frame uses space-between, return immediately
+    if (frameNode.primaryAxisAlignItems === "SPACE_BETWEEN") {
+        return "space-between";
+    }
+
+    // Check if parent exists and is a horizontal frame
+    const parentFrame = node.parent as FrameNode | null;
+    if (!parentFrame || parentFrame.type !== "FRAME" || parentFrame.layoutMode !== "HORIZONTAL") {
+        return "unknown";
+    }
+
+    // Get sibling nodes
+    const siblings = parentFrame.children.filter(child => child.type === "FRAME") as FrameNode[];
+    const index = siblings.indexOf(frameNode);
+
+    if (index === 0) {
+        return "leading";
+    } else if (index === siblings.length - 1) {
+        return "trailing";
+    }
+
+    return "center";
 }
 
 async function generateGroupContent(node: SceneNode): Promise<string> {
@@ -635,11 +710,12 @@ function generateShapeContent(node: SceneNode, shape: string): string {
 async function generateTextContent(node: TextNode): Promise<string> {
     const typography = await getTypographyProperties(node);
     const textColor = await extractTokenFromTextNode(node);
+    
     return `Text("${node.characters}")
-    .font(.${typography})
-    .foregroundColor(.${textColor})
-    .opacity(${node.opacity})
-    .frame(maxWidth: .infinity, alignment: .${getTextPosition(node)}) \n`;
+.font(.${typography})
+.foregroundColor(.${textColor})
+.opacity(${node.opacity})
+.frame(maxWidth: .infinity, alignment: .${getTextPosition(node)}) \n`;
 }
 
 async function generateListRowProps(node: SceneNode): Promise<string> {
@@ -650,7 +726,7 @@ async function generateListRowProps(node: SceneNode): Promise<string> {
             return value ? `${toCamelCase(field)}: "${value}"` : null;
         })
         .filter(Boolean);
-  
+
     if (node.type === "INSTANCE") {
         let cool = node.findOne(n => n.name === "Leading Item") as InstanceNode;
         const leadingItem = await getLeadingItemIcon(cool);
@@ -691,7 +767,9 @@ async function getLeadingItemIcon(node: InstanceNode): Promise<string> {
 
 async function getComponentType(node: InstanceNode): Promise<string> {
     const mainComponent = await node.getMainComponentAsync();
+    
     if (!mainComponent) return "Container";
+
     const [prefix, suffix] = mainComponent.id.split(":");
     const componentMap: Record<string, string> = {
         "119": "Button",
@@ -705,7 +783,6 @@ async function getComponentType(node: InstanceNode): Promise<string> {
         "17": "Image",
         "352": "Image"
     };
-
     if (prefix === "171") {
         const componentMap171: Record<string, string> = {
             "3056": "Avatar",
